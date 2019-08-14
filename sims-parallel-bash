@@ -1,0 +1,9 @@
+foo () {
+local i=$1
+cd ~/instance_$i
+Rscript -e 'source("non-para-kernel-updating-sims.R")'
+}
+
+for i in {1..4}
+do foo "$i" &
+done

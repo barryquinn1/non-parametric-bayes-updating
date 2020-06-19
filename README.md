@@ -44,9 +44,11 @@ Using 4000 posterior draws gave results broadly consistent with the parametric u
 
 It seems to me that there are two options to reduce workload for the kernel approach:
 1.	for only those draws that lie within a given distance of the current proposed parameter vector, evaluate densities that are defined within that distance, and that asymptotically reach zero at the boundaries (for example, transformed multivariate betas); add these and divide by the total number of draws in the prior, not just those that were evaluated (the others having had zero density)
-2.	count prior draws within hypercubes of the parameter space, use either (1) or (2) above on the hypercube centroids; calculate a weighted average using the counts in each hypercube (note that the size of the grid has to adapt as the posterior is updated and shrinks)
+2.	count prior draws within hypercubes of the parameter space, use either standard kernels or the constrained ones in (1) above on the hypercube centroids, then calculate a weighted average using the counts in each hypercube (note that the size of the grid has to adapt as the posterior is updated and shrinks)
 
-The latter of these (the "hypercubes" method) appears to be most efficient, but at anything more than a few parameters, the dimensionality of the parameter space will require too many hypercubes for it to be efficient compared to (1) or (2), and it seems likely that as dimension increases, hypercubes will soon only contain 0 or 1 posterior draw.
+The latter of these (the "hypercubes" method) appears to be most efficient, but at anything more than a few parameters, the dimensionality of the parameter space will require too many hypercubes for it to be efficient compared to (1), and it seems likely that as dimension increases, hypercubes will soon only contain 0 or 1 posterior draw.
+
+I have not yet evaluated (1) in simulation.
 
 ![Figure 3](hypercube-kernel-1scaling-4000draws-10cuts.png)
 
@@ -62,16 +64,20 @@ I ran this simulation 1000 times on four instances of R and RStan, using the sam
 
 *Figure 5: 1000 posterior standard deviation estimates of the beta1 parameter. Other parameters had similar patterns.*
 
+The hypercubes can be seen to inflate variance somewhat, while the kernels produce final posterior samples with reasonable means but in 22% of iterations, the standard errors collapsed quickly to a common value around 0.2 and stayed there. It's not clear what was going on though it could be that kernels coincide and become an inadvertently powerful prior. This needs to be investigated further.
+
 Stan code can be found in the .R script files. **non-para-kernel-updating.R** runs one simulation, **non-para-kernel-updating-sims.R** does many, and was run in separate instances (with amended RNG seeds) in the cloud, before being recombined with **recombine-simulations.R**.
 
 ## Conclusions
 
 Kernel updating is a potentially useful trick when we need to scale up a serious Bayesian analysis to large datasets and run it regularly, as is often the case in commercial data science settings.
 
-It requires care when setting the bandwidth and size of the posterior sample. Too small a bandwidth, and sudden changes in prior density gradient will slow down Stan. Too large a bandwidth, and the variance of the prior will be inflated. I have chosen bandwidth by comparing univariate kernel density plots of the posterior draws from the first batch of data. Stan's common stepsize for all parameters necessitates a model specification scaled in such a way that a common bandwidth is also likely to suffice.
+It requires care when setting the bandwidth and size of the posterior sample. Too small a bandwidth, and sudden changes in prior density gradient will slow down Stan. Too large a bandwidth, and the variance of the prior will be inflated. I have chosen bandwidth by comparing univariate kernel density plots of the posterior draws from the first batch of data. Stan's common stepsize for all parameters necessitates a model specification scaled in such a way that a common bandwidth is also likely to suffice. The number of posterior draws that one passes forward to make the next prior is a simple balance of time and precision.
 
-It does not seem to have been done before; the only similar work I found was by Clayton Deutsch at the University of Alberta (see the paper "Data Integration with Non-Parametric Bayesian Updating"), although he didn't directly use posterior draws.
+This general method could presumably be applied in most Bayesian algorithms, although the problem of gradients with small bandwidths would adversely affect those that use gradients, such as HMC (which has been used in this simulation), MALA or PDMPs. It works on continuous parameters only.
+
+It does not seem to have been done before; the only similar work I found was by Neufeld and Deutsch at the University of Alberta (see the 2006 paper "Data Integration with Non-Parametric Bayesian Updating"), although they used kriging on quantiles of univariate CDFs rather than kernels on posterior draws.
 
 As an aside, although I call this a kernel method after the established kernel density technique, in the code I have written, I evaluate proper probability densities for the prior, which is fast in Stan and makes the calculation simpler. In theory, you could use kernel functions and rescale them afterwards, but I don't see an advantage to it.
 
-There are two interesting avenues to take this approach further. Firstly, a similar approach can be adopted with a Gibbs sampler. Users of BUGS and JAGS have long been familiar with the "ones trick" and the "zeros trick" to increase the log likelihood arbitrarily (and Section 9.5.2 of The BUGS Book applies this to prior distributions with a uniform proposal density). This might allow us to iterate between evaluating discrete parameters in BUGS/JAGS and highly correlated continuous parameters in Stan. Secondly, Bayesian neural networks might benefit from a method to pass strangely-distributed posterior predictions forward from one layer to the next (or backward).
+There are two interesting avenues to take this approach further. Firstly, a similar approach can be adopted with a Gibbs sampler. Users of BUGS and JAGS have long been familiar with the "ones trick" and the "zeros trick" to increase the log likelihood arbitrarily (and Section 9.5.2 of The BUGS Book applies this to prior distributions with a uniform proposal density). This might allow us to iterate between evaluating discrete parameters in BUGS/JAGS and highly correlated continuous parameters in Stan. Secondly, Bayesian neural networks might benefit from a method to pass strangely-distributed posterior predictions forward from one layer to the next (or posteriors of neuron weights backward).
